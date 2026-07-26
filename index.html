@@ -35,12 +35,38 @@
   .budget-row button{background:none;border:1px solid var(--line);color:var(--muted);padding:6px 10px;border-radius:6px;font-size:0.78rem;cursor:pointer;}
   .budget-row button:hover{border-color:var(--gold);color:var(--gold);}
 
+  .cat-budget-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:28px;}
+  .cat-budget-row{display:flex;align-items:center;gap:8px;}
+  .cat-budget-row label{font-size:0.8rem;color:var(--muted);flex:1;}
+  .cat-budget-row input{width:90px;background:var(--card-hi);border:1px solid var(--line);color:var(--gold);padding:6px 8px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;}
+  .cat-budget-row input:focus{border-color:var(--gold);}
+
   .bars{margin-bottom:28px;}
-  .bar-row{margin-bottom:10px;}
+  .bar-row{margin-bottom:14px;}
   .bar-top{display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;color:var(--muted);}
   .bar-top span.amt{font-family:'JetBrains Mono',monospace;color:var(--text);}
-  .bar-track{height:6px;background:var(--line);border-radius:4px;overflow:hidden;}
-  .bar-fill{height:100%;background:var(--gold);border-radius:4px;}
+  .bar-top span.exp{color:var(--muted);font-weight:400;}
+  .bar-track{height:8px;background:var(--line);border-radius:4px;overflow:hidden;position:relative;}
+  .bar-fill{height:100%;border-radius:4px;background:var(--gold);transition:width 0.2s;}
+  .bar-fill.over{background:var(--red);}
+  .bar-fill.under{background:var(--teal);}
+  .bar-marker{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text);opacity:0.85;}
+
+  .breakdown{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:28px;}
+  .breakdown-row{display:grid;grid-template-columns:110px 1fr 90px;gap:10px;align-items:center;margin-bottom:12px;}
+  .breakdown-row label{font-size:0.85rem;color:var(--text);}
+  .breakdown-row input{background:var(--card-hi);border:1px solid var(--line);color:var(--gold);padding:7px 9px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:0.85rem;outline:none;width:100%;}
+  .breakdown-row input:focus{border-color:var(--gold);}
+  .breakdown-track{height:6px;background:var(--line);border-radius:4px;overflow:hidden;position:relative;}
+  .breakdown-fill{height:100%;border-radius:4px;}
+  .breakdown-fill.ok{background:var(--teal);}
+  .breakdown-fill.over{background:var(--red);}
+  .breakdown-status{font-size:0.78rem;text-align:right;font-family:'JetBrains Mono',monospace;}
+  .breakdown-status.ok{color:var(--teal);}
+  .breakdown-status.over{color:var(--red);}
+  .breakdown-status.unset{color:var(--muted);}
+  .breakdown button{margin-top:6px;background:var(--gold);color:#1a1408;border:none;padding:9px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.85rem;}
+  .breakdown button:hover{filter:brightness(1.08);}
 
   form.add{display:grid;grid-template-columns: 1fr 1fr;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:28px;}
   form.add input, form.add select{background:var(--card-hi);border:1px solid var(--line);color:var(--text);padding:10px 12px;border-radius:8px;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;}
@@ -124,6 +150,12 @@
     <button id="saveBudgetBtn">Save</button>
   </div>
 
+  <div class="section-title">Expected vs actual (by category)</div>
+  <div class="breakdown" id="breakdownSection"></div>
+
+  <div class="section-title">Expected expenses by category</div>
+  <div class="cat-budget-grid" id="catBudgetGrid"></div>
+
   <div class="bars" id="categoryBars"></div>
 
   <form class="add" id="addForm">
@@ -153,8 +185,11 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const CATEGORIES = ['Food','Rent','Transport','Groceries','Utilities','Health','Entertainment','Other'];
+
 let expenses = [];
 let budget = 0;
+let catBudgets = {};
 let isSignup = false;
 let currentUser = null;
 
@@ -214,6 +249,28 @@ async function loadData(){
   const { data: bud } = await sb.from('budgets').select('amount').eq('user_id', currentUser.id).maybeSingle();
   budget = bud ? Number(bud.amount) : 0;
   document.getElementById('budgetInput').value = budget || '';
+
+  const { data: catBud } = await sb.from('category_budgets').select('category, expected').eq('user_id', currentUser.id);
+  catBudgets = {};
+  (catBud || []).forEach(row => { catBudgets[row.category] = Number(row.expected); });
+  renderCatBudgetGrid();
+
+  render();
+}
+
+function renderCatBudgetGrid(){
+  const grid = document.getElementById('catBudgetGrid');
+  grid.innerHTML = CATEGORIES.map(cat => `
+    <div class="cat-budget-row">
+      <label>${cat}</label>
+      <input type="number" min="0" step="0.01" data-cat="${cat}" value="${catBudgets[cat] || ''}" placeholder="0">
+    </div>`).join('');
+}
+
+async function saveCatBudgetValue(category, expected){
+  const { error } = await sb.from('category_budgets').upsert({ user_id: currentUser.id, category, expected });
+  if(error){ alert('Could not save expected amount: ' + error.message); return; }
+  catBudgets[category] = expected;
   render();
 }
 
@@ -263,14 +320,30 @@ function render(){
 
   const byCat = {};
   monthly.forEach(e => { byCat[e.category] = (byCat[e.category]||0) + Number(e.amount); });
-  const maxCat = Math.max(1, ...Object.values(byCat));
+
+  // union of categories that have either actual spend or an expected amount set
+  const relevantCats = CATEGORIES.filter(c => (byCat[c] || 0) > 0 || (catBudgets[c] || 0) > 0);
+  const maxCat = Math.max(1, ...relevantCats.map(c => Math.max(byCat[c] || 0, catBudgets[c] || 0)));
   const barsEl = document.getElementById('categoryBars');
-  const cats = Object.entries(byCat).sort((a,b) => b[1]-a[1]);
-  barsEl.innerHTML = cats.length === 0 ? '' : '<div class="section-title">By category</div>' + cats.map(([cat, amt]) => `
+  const sortedCats = relevantCats.sort((a,b) => (byCat[b]||0) - (byCat[a]||0));
+
+  barsEl.innerHTML = sortedCats.length === 0 ? '' : '<div class="section-title">Actual vs expected</div>' + sortedCats.map(cat => {
+    const actual = byCat[cat] || 0;
+    const expected = catBudgets[cat] || 0;
+    const fillPct = (actual / maxCat * 100).toFixed(1);
+    const markerPct = expected > 0 ? (expected / maxCat * 100).toFixed(1) : null;
+    let fillClass = '';
+    if(expected > 0) fillClass = actual > expected ? 'over' : 'under';
+    const expectedLabel = expected > 0 ? `<span class="exp"> / ${fmt(expected)} expected</span>` : '';
+    return `
       <div class="bar-row">
-        <div class="bar-top"><span>${cat}</span><span class="amt">${fmt(amt)}</span></div>
-        <div class="bar-track"><div class="bar-fill" style="width:${(amt/maxCat*100).toFixed(0)}%"></div></div>
-      </div>`).join('');
+        <div class="bar-top"><span>${cat}</span><span class="amt">${fmt(actual)}${expectedLabel}</span></div>
+        <div class="bar-track">
+          <div class="bar-fill ${fillClass}" style="width:${fillPct}%"></div>
+          ${markerPct !== null ? `<div class="bar-marker" style="left:${markerPct}%"></div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
 
   const listEl = document.getElementById('entryList');
   if(expenses.length === 0){
@@ -308,6 +381,14 @@ document.getElementById('entryList').addEventListener('click', async (ev) => {
 document.getElementById('saveBudgetBtn').addEventListener('click', async () => {
   const val = Number(document.getElementById('budgetInput').value) || 0;
   await saveBudgetValue(val);
+});
+
+document.getElementById('catBudgetGrid').addEventListener('change', async (ev) => {
+  if(ev.target.tagName === 'INPUT'){
+    const cat = ev.target.dataset.cat;
+    const val = Number(ev.target.value) || 0;
+    await saveCatBudgetValue(cat, val);
+  }
 });
 </script>
 </body>
