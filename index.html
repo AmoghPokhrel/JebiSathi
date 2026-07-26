@@ -6,62 +6,33 @@
 <title>Ledger — Expense Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
-    --bg: #14181f;
-    --card: #1c2230;
-    --card-hi: #232a3a;
-    --line: #2c3346;
-    --gold: #e8a33d;
-    --teal: #4fd1c5;
-    --red: #e8664f;
-    --text: #f2f4f8;
-    --muted: #8b93a7;
+    --bg: #14181f; --card: #1c2230; --card-hi: #232a3a; --line: #2c3346;
+    --gold: #e8a33d; --teal: #4fd1c5; --red: #e8664f; --text: #f2f4f8; --muted: #8b93a7;
   }
   *{box-sizing:border-box;}
-  body{
-    margin:0;
-    background:var(--bg);
-    color:var(--text);
-    font-family:'Inter',sans-serif;
-    min-height:100vh;
-    padding:32px 16px 80px;
-  }
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;padding:32px 16px 80px;}
   .wrap{max-width:640px;margin:0 auto;}
-  header{margin-bottom:28px;}
-  header h1{
-    font-family:'DM Serif Display',serif;
-    font-size:2.1rem;
-    margin:0 0 4px;
-    letter-spacing:0.3px;
-  }
+  header{margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+  header h1{font-family:'DM Serif Display',serif;font-size:2.1rem;margin:0 0 4px;letter-spacing:0.3px;}
   header p{color:var(--muted);margin:0;font-size:0.92rem;}
+  .who{text-align:right;font-size:0.8rem;color:var(--muted);}
+  .who button{background:none;border:1px solid var(--line);color:var(--muted);padding:5px 10px;border-radius:6px;font-size:0.76rem;cursor:pointer;margin-top:4px;}
+  .who button:hover{border-color:var(--red);color:var(--red);}
 
   .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;}
-  .card{
-    background:var(--card);
-    border:1px solid var(--line);
-    border-radius:10px;
-    padding:16px 18px;
-  }
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;}
   .card .label{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;}
   .card .value{font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;}
   .card.over .value{color:var(--red);}
   .card.under .value{color:var(--teal);}
 
-  .budget-row{
-    display:flex;gap:10px;align-items:center;margin-bottom:24px;
-    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;
-  }
+  .budget-row{display:flex;gap:10px;align-items:center;margin-bottom:24px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;}
   .budget-row label{font-size:0.85rem;color:var(--muted);white-space:nowrap;}
-  .budget-row input{
-    flex:1;background:transparent;border:none;color:var(--gold);
-    font-family:'JetBrains Mono',monospace;font-size:1rem;outline:none;
-  }
-  .budget-row button{
-    background:none;border:1px solid var(--line);color:var(--muted);
-    padding:6px 10px;border-radius:6px;font-size:0.78rem;cursor:pointer;
-  }
+  .budget-row input{flex:1;background:transparent;border:none;color:var(--gold);font-family:'JetBrains Mono',monospace;font-size:1rem;outline:none;}
+  .budget-row button{background:none;border:1px solid var(--line);color:var(--muted);padding:6px 10px;border-radius:6px;font-size:0.78rem;cursor:pointer;}
   .budget-row button:hover{border-color:var(--gold);color:var(--gold);}
 
   .bars{margin-bottom:28px;}
@@ -71,82 +42,69 @@
   .bar-track{height:6px;background:var(--line);border-radius:4px;overflow:hidden;}
   .bar-fill{height:100%;background:var(--gold);border-radius:4px;}
 
-  form.add{
-    display:grid;
-    grid-template-columns: 1fr 1fr;
-    gap:10px;
-    background:var(--card);
-    border:1px solid var(--line);
-    border-radius:10px;
-    padding:16px;
-    margin-bottom:28px;
-  }
-  form.add input, form.add select{
-    background:var(--card-hi);
-    border:1px solid var(--line);
-    color:var(--text);
-    padding:10px 12px;
-    border-radius:8px;
-    font-family:'Inter',sans-serif;
-    font-size:0.9rem;
-    outline:none;
-  }
+  form.add{display:grid;grid-template-columns: 1fr 1fr;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:28px;}
+  form.add input, form.add select{background:var(--card-hi);border:1px solid var(--line);color:var(--text);padding:10px 12px;border-radius:8px;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;}
   form.add input:focus, form.add select:focus{border-color:var(--gold);}
   form.add input[type="text"]{grid-column:1/3;}
-  form.add button{
-    grid-column:1/3;
-    background:var(--gold);
-    color:#1a1408;
-    border:none;
-    padding:11px;
-    border-radius:8px;
-    font-weight:700;
-    cursor:pointer;
-    font-size:0.92rem;
-  }
+  form.add button{grid-column:1/3;background:var(--gold);color:#1a1408;border:none;padding:11px;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.92rem;}
   form.add button:hover{filter:brightness(1.08);}
 
-  .section-title{
-    font-size:0.75rem;color:var(--muted);text-transform:uppercase;
-    letter-spacing:0.08em;margin:0 0 12px;
-  }
+  .section-title{font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;}
 
-  .entry{
-    display:flex;align-items:baseline;gap:8px;
-    padding:10px 2px;border-bottom:1px dashed var(--line);
-  }
-  .entry .cat{
-    font-size:0.72rem;color:var(--gold);background:rgba(232,163,61,0.12);
-    padding:2px 8px;border-radius:20px;white-space:nowrap;
-  }
+  .entry{display:flex;align-items:baseline;gap:8px;padding:10px 2px;border-bottom:1px dashed var(--line);}
+  .entry .cat{font-size:0.72rem;color:var(--gold);background:rgba(232,163,61,0.12);padding:2px 8px;border-radius:20px;white-space:nowrap;}
   .entry .note{flex:0 1 auto;font-size:0.9rem;color:var(--text);}
   .entry .leader{flex:1;border-bottom:1px dotted var(--line);position:relative;top:-3px;min-width:8px;}
   .entry .date{font-size:0.72rem;color:var(--muted);white-space:nowrap;}
   .entry .amt{font-family:'JetBrains Mono',monospace;font-weight:600;white-space:nowrap;}
-  .entry .del{
-    background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.9rem;
-    padding:0 0 0 6px;
-  }
+  .entry .del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.9rem;padding:0 0 0 6px;}
   .entry .del:hover{color:var(--red);}
 
   .empty{color:var(--muted);font-size:0.88rem;padding:20px 0;text-align:center;}
-
-  .vocab{
-    margin-top:36px;padding:14px 16px;border-left:3px solid var(--teal);
-    background:var(--card);border-radius:0 8px 8px 0;font-size:0.85rem;color:var(--muted);
-  }
+  .vocab{margin-top:36px;padding:14px 16px;border-left:3px solid var(--teal);background:var(--card);border-radius:0 8px 8px 0;font-size:0.85rem;color:var(--muted);}
   .vocab b{color:var(--teal);font-family:'JetBrains Mono',monospace;}
 
-  @media (max-width:420px){
-    .cards{grid-template-columns:1fr;}
-  }
+  /* Auth screen */
+  #authScreen{max-width:360px;margin:80px auto;}
+  #authScreen h1{font-family:'DM Serif Display',serif;font-size:1.9rem;margin-bottom:6px;text-align:center;}
+  #authScreen p{color:var(--muted);text-align:center;margin-bottom:24px;font-size:0.88rem;}
+  .auth-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;}
+  .auth-card input{width:100%;background:var(--card-hi);border:1px solid var(--line);color:var(--text);padding:11px 12px;border-radius:8px;font-size:0.9rem;margin-bottom:10px;outline:none;}
+  .auth-card input:focus{border-color:var(--gold);}
+  .auth-card button{width:100%;background:var(--gold);color:#1a1408;border:none;padding:11px;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.92rem;margin-bottom:10px;}
+  .auth-card button:hover{filter:brightness(1.08);}
+  .auth-toggle{text-align:center;font-size:0.82rem;color:var(--muted);}
+  .auth-toggle a{color:var(--teal);cursor:pointer;text-decoration:none;}
+  .auth-error{color:var(--red);font-size:0.82rem;margin-bottom:10px;min-height:1em;}
+  .hidden{display:none !important;}
+
+  @media (max-width:420px){.cards{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
-<div class="wrap">
+
+<div id="authScreen">
+  <h1>Ledger</h1>
+  <p>Sign in to sync your expenses.</p>
+  <div class="auth-card">
+    <div class="auth-error" id="authError"></div>
+    <input type="email" id="authEmail" placeholder="Email">
+    <input type="password" id="authPassword" placeholder="Password">
+    <button id="authSubmit">Sign in</button>
+    <div class="auth-toggle" id="authToggle">New here? <a id="toSignup">Create an account</a></div>
+  </div>
+</div>
+
+<div class="wrap hidden" id="appScreen">
   <header>
-    <h1>Ledger</h1>
-    <p>Your monthly spending, kept honest.</p>
+    <div>
+      <h1>Ledger</h1>
+      <p>Your monthly spending, kept honest.</p>
+    </div>
+    <div class="who">
+      <div id="userEmail"></div>
+      <button id="signOutBtn">Sign out</button>
+    </div>
   </header>
 
   <div class="cards">
@@ -163,7 +121,7 @@
   <div class="budget-row">
     <label for="budgetInput">Monthly budget</label>
     <input id="budgetInput" type="number" placeholder="e.g. 20000" min="0">
-    <button id="saveBudget">Save</button>
+    <button id="saveBudgetBtn">Save</button>
   </div>
 
   <div class="bars" id="categoryBars"></div>
@@ -171,14 +129,9 @@
   <form class="add" id="addForm">
     <input type="number" id="amount" placeholder="Amount (Rs.)" min="0" step="0.01" required>
     <select id="category">
-      <option>Food</option>
-      <option>Rent</option>
-      <option>Transport</option>
-      <option>Groceries</option>
-      <option>Utilities</option>
-      <option>Health</option>
-      <option>Entertainment</option>
-      <option>Other</option>
+      <option>Food</option><option>Rent</option><option>Transport</option>
+      <option>Groceries</option><option>Utilities</option><option>Health</option>
+      <option>Entertainment</option><option>Other</option>
     </select>
     <input type="text" id="note" placeholder="Note (optional)">
     <button type="submit">Add expense</button>
@@ -188,50 +141,107 @@
   <div id="entryList"></div>
 
   <div class="vocab">
-    Word of the day: <b>frugal</b> — careful with money, avoiding unnecessary spending. A frugal week is exactly what a tight budget calls for.
+    Word of the day: <b>frugal</b> — careful with money, avoiding unnecessary spending.
   </div>
 </div>
 
 <script>
-const STORAGE_KEY = 'expenses:list';
-const BUDGET_KEY = 'expenses:budget';
+// ---- CONFIGURE THESE TWO LINES ----
+const SUPABASE_URL = 'https://ynmvjykxovpfmvuwnzzf.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlubXZqeWt4b3ZwZm12dXduenpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNjk2MjAsImV4cCI6MjEwMDY0NTYyMH0.f8DbRbVzsJIJWH2PinsxYiYKKs-_pPxltZQKfLJSJlM';
+// ------------------------------------
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 let expenses = [];
 let budget = 0;
+let isSignup = false;
+let currentUser = null;
 
-function currentMonthKey(d = new Date()){
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-}
+function fmt(n){ return 'Rs. ' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 2}); }
+function currentMonthKey(d = new Date()){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
 
-function fmt(n){
-  return 'Rs. ' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 2});
-}
+// ---------- AUTH ----------
+document.getElementById('toSignup').addEventListener('click', () => {
+  isSignup = !isSignup;
+  document.getElementById('authSubmit').textContent = isSignup ? 'Create account' : 'Sign in';
+  document.getElementById('toSignup').textContent = isSignup ? 'Sign in instead' : 'Create an account';
+  document.querySelector('#authToggle').firstChild.textContent = isSignup ? 'Already have an account? ' : 'New here? ';
+});
 
+document.getElementById('authSubmit').addEventListener('click', async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.textContent = '';
+  if(!email || !password){ errEl.textContent = 'Enter both email and password.'; return; }
+
+  const { data, error } = isSignup
+    ? await sb.auth.signUp({ email, password })
+    : await sb.auth.signInWithPassword({ email, password });
+
+  if(error){ errEl.textContent = error.message; return; }
+  if(isSignup && !data.session){
+    errEl.style.color = 'var(--teal)';
+    errEl.textContent = 'Check your email to confirm your account, then sign in.';
+    return;
+  }
+});
+
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
+});
+
+sb.auth.onAuthStateChange((event, session) => {
+  if(session){
+    currentUser = session.user;
+    document.getElementById('authScreen').classList.add('hidden');
+    document.getElementById('appScreen').classList.remove('hidden');
+    document.getElementById('userEmail').textContent = currentUser.email;
+    loadData();
+  } else {
+    currentUser = null;
+    document.getElementById('appScreen').classList.add('hidden');
+    document.getElementById('authScreen').classList.remove('hidden');
+  }
+});
+
+// ---------- DATA ----------
 async function loadData(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    expenses = raw ? JSON.parse(raw) : [];
-  }catch(e){ expenses = []; }
-  try{
-    const raw = localStorage.getItem(BUDGET_KEY);
-    budget = raw ? JSON.parse(raw) : 0;
-  }catch(e){ budget = 0; }
+  const { data: exp, error: expErr } = await sb.from('expenses').select('*').order('created_at', {ascending:false});
+  if(!expErr) expenses = exp || [];
+
+  const { data: bud } = await sb.from('budgets').select('amount').eq('user_id', currentUser.id).maybeSingle();
+  budget = bud ? Number(bud.amount) : 0;
   document.getElementById('budgetInput').value = budget || '';
   render();
 }
 
-async function saveExpenses(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses)); }
-  catch(e){ console.error('Could not save expenses', e); }
+async function addExpense(amount, category, note){
+  const { error } = await sb.from('expenses').insert({
+    user_id: currentUser.id, amount, category, note
+  });
+  if(error){ alert('Could not save: ' + error.message); return; }
+  await loadData();
 }
 
-async function saveBudget(){
-  try{ localStorage.setItem(BUDGET_KEY, JSON.stringify(budget)); }
-  catch(e){ console.error('Could not save budget', e); }
+async function deleteExpense(id){
+  const { error } = await sb.from('expenses').delete().eq('id', id);
+  if(error){ alert('Could not delete: ' + error.message); return; }
+  await loadData();
 }
 
+async function saveBudgetValue(amount){
+  const { error } = await sb.from('budgets').upsert({ user_id: currentUser.id, amount });
+  if(error){ alert('Could not save budget: ' + error.message); return; }
+  budget = amount;
+  render();
+}
+
+// ---------- RENDER ----------
 function monthExpenses(){
   const mk = currentMonthKey();
-  return expenses.filter(e => e.date.startsWith(mk));
+  return expenses.filter(e => e.created_at.startsWith(mk));
 }
 
 function render(){
@@ -251,78 +261,54 @@ function render(){
     remainingCard.classList.remove('over','under');
   }
 
-  // category bars
   const byCat = {};
   monthly.forEach(e => { byCat[e.category] = (byCat[e.category]||0) + Number(e.amount); });
   const maxCat = Math.max(1, ...Object.values(byCat));
   const barsEl = document.getElementById('categoryBars');
   const cats = Object.entries(byCat).sort((a,b) => b[1]-a[1]);
-  if(cats.length === 0){
-    barsEl.innerHTML = '';
-  } else {
-    barsEl.innerHTML = '<div class="section-title">By category</div>' + cats.map(([cat, amt]) => `
+  barsEl.innerHTML = cats.length === 0 ? '' : '<div class="section-title">By category</div>' + cats.map(([cat, amt]) => `
       <div class="bar-row">
         <div class="bar-top"><span>${cat}</span><span class="amt">${fmt(amt)}</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${(amt/maxCat*100).toFixed(0)}%"></div></div>
-      </div>
-    `).join('');
-  }
+      </div>`).join('');
 
-  // entry list (most recent first, all-time)
   const listEl = document.getElementById('entryList');
-  const sorted = [...expenses].sort((a,b) => new Date(b.date) - new Date(a.date));
-  if(sorted.length === 0){
+  if(expenses.length === 0){
     listEl.innerHTML = '<div class="empty">No expenses yet — add your first one above.</div>';
   } else {
-    listEl.innerHTML = sorted.map(e => `
+    listEl.innerHTML = expenses.map(e => `
       <div class="entry" data-id="${e.id}">
         <span class="cat">${e.category}</span>
         <span class="note">${e.note ? e.note : ''}</span>
         <span class="leader"></span>
-        <span class="date">${new Date(e.date).toLocaleDateString('en-IN', {day:'2-digit', month:'short'})}</span>
+        <span class="date">${new Date(e.created_at).toLocaleDateString('en-IN', {day:'2-digit', month:'short'})}</span>
         <span class="amt">${fmt(e.amount)}</span>
         <button class="del" title="Delete">✕</button>
-      </div>
-    `).join('');
+      </div>`).join('');
   }
 }
 
 document.getElementById('addForm').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const amount = document.getElementById('amount').value;
+  const amount = Number(document.getElementById('amount').value);
   const category = document.getElementById('category').value;
   const note = document.getElementById('note').value.trim();
-  if(!amount || Number(amount) <= 0) return;
-
-  expenses.push({
-    id: Date.now().toString(),
-    amount: Number(amount),
-    category,
-    note,
-    date: new Date().toISOString()
-  });
-  await saveExpenses();
+  if(!amount || amount <= 0) return;
+  await addExpense(amount, category, note);
   ev.target.reset();
-  render();
 });
 
 document.getElementById('entryList').addEventListener('click', async (ev) => {
   if(ev.target.classList.contains('del')){
     const id = ev.target.closest('.entry').dataset.id;
-    expenses = expenses.filter(e => e.id !== id);
-    await saveExpenses();
-    render();
+    await deleteExpense(id);
   }
 });
 
-document.getElementById('saveBudget').addEventListener('click', async () => {
+document.getElementById('saveBudgetBtn').addEventListener('click', async () => {
   const val = Number(document.getElementById('budgetInput').value) || 0;
-  budget = val;
-  await saveBudget();
-  render();
+  await saveBudgetValue(val);
 });
-
-loadData();
 </script>
 </body>
 </html>
