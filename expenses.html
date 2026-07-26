@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Expenses</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<div id="authScreen">
+  <h1>Ledger</h1>
+  <p>Sign in to continue.</p>
+  <div class="auth-card">
+    <div class="auth-error" id="authError"></div>
+    <input type="email" id="authEmail" placeholder="Email">
+    <input type="password" id="authPassword" placeholder="Password">
+    <button class="primary" id="authSubmit">Sign in</button>
+  </div>
+</div>
+
+<div class="wrap hidden" id="appScreen">
+  <div class="topnav">
+    <div class="brand">Ledger</div>
+    <div class="links">
+      <a href="index.html">Dashboard</a>
+      <a href="expenses.html" class="active">Expenses</a>
+    </div>
+    <div class="who">
+      <span id="userEmail"></span>
+      <button class="signout" id="signOutBtn">Sign out</button>
+    </div>
+  </div>
+
+  <div id="noActive" class="card hidden">
+    <div class="label">No duration running</div>
+    <p style="color:var(--muted);font-size:0.88rem;margin:6px 0 14px;">Start one from the dashboard before adding expenses.</p>
+    <a href="index.html"><button class="primary" type="button">Go to dashboard</button></a>
+  </div>
+
+  <div id="activeContent" class="hidden">
+    <header>
+      <h1 id="periodTitle">Duration</h1>
+      <p id="periodSub"></p>
+    </header>
+
+    <div class="cards">
+      <div class="card">
+        <div class="label">Spent so far</div>
+        <div class="value" id="totalSpent">Rs. 0</div>
+      </div>
+      <div class="card" id="remainingCard">
+        <div class="label">Remaining budget</div>
+        <div class="value" id="remaining">Rs. 0</div>
+      </div>
+    </div>
+
+    <div class="section-title">Expected expenses by category</div>
+    <div class="card">
+      <div class="cat-budget-grid" id="catBudgetGrid"></div>
+    </div>
+
+    <div class="section-title">Actual vs expected</div>
+    <div class="card" id="barsCard">
+      <div id="categoryBars"></div>
+    </div>
+
+    <div class="section-title">Add an expense</div>
+    <div class="card">
+      <form class="add" id="addForm">
+        <input type="number" id="amount" placeholder="Amount (Rs.)" min="0" step="0.01" required>
+        <select id="category">
+          <option>Food</option><option>Rent</option><option>Transport</option>
+          <option>Groceries</option><option>Utilities</option><option>Health</option>
+          <option>Entertainment</option><option>Other</option>
+        </select>
+        <input type="text" id="note" placeholder="Note (optional)">
+        <button class="primary" type="submit">Add expense</button>
+      </form>
+    </div>
+
+    <div class="section-title">Entries</div>
+    <div class="card">
+      <div id="entryList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = ['Food','Rent','Transport','Groceries','Utilities','Health','Entertainment','Other'];
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let currentUser = null;
+let activePeriod = null;
+let expenses = [];
+let catBudgets = {};
+
+function fmt(n){ return 'Rs. ' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 2}); }
+function fmtDate(d){ return new Date(d).toLocaleDateString('en-IN', {day:'2-digit', month:'short'}); }
+
+document.getElementById('authSubmit').addEventListener('click', async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){ errEl.textContent = error.message; }
+});
+
+document.getElementById('signOutBtn').addEventListener('click', async () => { await sb.auth.signOut(); });
+
+sb.auth.onAuthStateChange((event, session) => {
+  if(session){
+    currentUser = session.user;
+    document.getElementById('authScreen').classList.add('hidden');
+    document.getElementById('appScreen').classList.remove('hidden');
+    document.getElementById('userEmail').textContent = currentUser.email;
+    loadPage();
+  } else {
+    currentUser = null;
+    document.getElementById('appScreen').classList.add('hidden');
+    document.getElementById('authScreen').classList.remove('hidden');
+  }
+});
+
+async function loadPage(){
+  const { data: periods } = await sb.from('periods').select('*').is('ended_at', null).limit(1);
+  activePeriod = (periods && periods[0]) || null;
+
+  if(!activePeriod){
+    document.getElementById('noActive').classList.remove('hidden');
+    document.getElementById('activeContent').classList.add('hidden');
+    return;
+  }
+  document.getElementById('noActive').classList.add('hidden');
+  document.getElementById('activeContent').classList.remove('hidden');
+  document.getElementById('periodTitle').textContent = activePeriod.name;
+  document.getElementById('periodSub').textContent = 'Running since ' + fmtDate(activePeriod.started_at);
+
+  const { data: exp } = await sb.from('expenses').select('*').eq('period_id', activePeriod.id).order('created_at', {ascending:false});
+  expenses = exp || [];
+
+  const { data: catBud } = await sb.from('category_budgets').select('category, expected').eq('period_id', activePeriod.id);
+  catBudgets = {};
+  (catBud || []).forEach(row => { catBudgets[row.category] = Number(row.expected); });
+
+  renderCatBudgetGrid();
+  render();
+}
+
+function renderCatBudgetGrid(){
+  const grid = document.getElementById('catBudgetGrid');
+  grid.innerHTML = CATEGORIES.map(cat => `
+    <div class="cat-budget-row">
+      <label>${cat}</label>
+      <input type="number" min="0" step="0.01" data-cat="${cat}" value="${catBudgets[cat] || ''}" placeholder="0">
+    </div>`).join('');
+}
+
+document.getElementById('catBudgetGrid').addEventListener('change', async (ev) => {
+  if(ev.target.tagName === 'INPUT'){
+    const category = ev.target.dataset.cat;
+    const expected = Number(ev.target.value) || 0;
+    const { error } = await sb.from('category_budgets').upsert(
+      { user_id: currentUser.id, period_id: activePeriod.id, category, expected },
+      { onConflict: 'period_id,category' }
+    );
+    if(error){ alert('Could not save: ' + error.message); return; }
+    catBudgets[category] = expected;
+    render();
+  }
+});
+
+document.getElementById('addForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const amount = Number(document.getElementById('amount').value);
+  const category = document.getElementById('category').value;
+  const note = document.getElementById('note').value.trim();
+  if(!amount || amount <= 0) return;
+  const { error } = await sb.from('expenses').insert({
+    user_id: currentUser.id, period_id: activePeriod.id, amount, category, note
+  });
+  if(error){ alert('Could not save: ' + error.message); return; }
+  ev.target.reset();
+  loadPage();
+});
+
+document.getElementById('entryList').addEventListener('click', async (ev) => {
+  if(ev.target.classList.contains('del')){
+    const id = ev.target.closest('.entry').dataset.id;
+    const { error } = await sb.from('expenses').delete().eq('id', id);
+    if(error){ alert('Could not delete: ' + error.message); return; }
+    loadPage();
+  }
+});
+
+function render(){
+  const total = expenses.reduce((s,e) => s + Number(e.amount), 0);
+  document.getElementById('totalSpent').textContent = fmt(total);
+
+  const remainingCard = document.getElementById('remainingCard');
+  const remainingEl = document.getElementById('remaining');
+  if(activePeriod.budget > 0){
+    const remaining = activePeriod.budget - total;
+    remainingEl.textContent = fmt(remaining);
+    remainingCard.classList.toggle('over', remaining < 0);
+    remainingCard.classList.toggle('under', remaining >= 0);
+  } else {
+    remainingEl.textContent = '— not set';
+    remainingCard.classList.remove('over','under');
+  }
+
+  const byCat = {};
+  expenses.forEach(e => { byCat[e.category] = (byCat[e.category]||0) + Number(e.amount); });
+  const relevantCats = CATEGORIES.filter(c => (byCat[c] || 0) > 0 || (catBudgets[c] || 0) > 0);
+  const maxCat = Math.max(1, ...relevantCats.map(c => Math.max(byCat[c] || 0, catBudgets[c] || 0)));
+  const sortedCats = relevantCats.sort((a,b) => (byCat[b]||0) - (byCat[a]||0));
+
+  document.getElementById('categoryBars').innerHTML = sortedCats.length === 0
+    ? '<div class="empty">No expenses yet for this duration.</div>'
+    : sortedCats.map(cat => {
+        const actual = byCat[cat] || 0;
+        const expected = catBudgets[cat] || 0;
+        const fillPct = (actual / maxCat * 100).toFixed(1);
+        const markerPct = expected > 0 ? (expected / maxCat * 100).toFixed(1) : null;
+        const fillClass = expected > 0 ? (actual > expected ? 'over' : 'under') : '';
+        const expectedLabel = expected > 0 ? `<span class="exp"> / ${fmt(expected)} expected</span>` : '';
+        return `
+          <div class="bar-row">
+            <div class="bar-top"><span>${cat}</span><span class="amt">${fmt(actual)}${expectedLabel}</span></div>
+            <div class="bar-track">
+              <div class="bar-fill ${fillClass}" style="width:${fillPct}%"></div>
+              ${markerPct !== null ? `<div class="bar-marker" style="left:${markerPct}%"></div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+
+  const listEl = document.getElementById('entryList');
+  listEl.innerHTML = expenses.length === 0
+    ? '<div class="empty">No expenses yet — add your first one above.</div>'
+    : expenses.map(e => `
+        <div class="entry" data-id="${e.id}">
+          <span class="cat">${e.category}</span>
+          <span class="note">${e.note ? e.note : ''}</span>
+          <span class="leader"></span>
+          <span class="date">${fmtDate(e.created_at)}</span>
+          <span class="amt">${fmt(e.amount)}</span>
+          <button class="del" title="Delete">✕</button>
+        </div>`).join('');
+}
+</script>
+</body>
+</html>
