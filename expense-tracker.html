@@ -208,24 +208,24 @@ function fmt(n){
 
 async function loadData(){
   try{
-    const res = await window.storage.get(STORAGE_KEY);
-    expenses = res ? JSON.parse(res.value) : [];
+    const raw = localStorage.getItem(STORAGE_KEY);
+    expenses = raw ? JSON.parse(raw) : [];
   }catch(e){ expenses = []; }
   try{
-    const res = await window.storage.get(BUDGET_KEY);
-    budget = res ? JSON.parse(res.value) : 0;
+    const raw = localStorage.getItem(BUDGET_KEY);
+    budget = raw ? JSON.parse(raw) : 0;
   }catch(e){ budget = 0; }
   document.getElementById('budgetInput').value = budget || '';
   render();
 }
 
 async function saveExpenses(){
-  try{ await window.storage.set(STORAGE_KEY, JSON.stringify(expenses)); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses)); }
   catch(e){ console.error('Could not save expenses', e); }
 }
 
 async function saveBudget(){
-  try{ await window.storage.set(BUDGET_KEY, JSON.stringify(budget)); }
+  try{ localStorage.setItem(BUDGET_KEY, JSON.stringify(budget)); }
   catch(e){ console.error('Could not save budget', e); }
 }
 
