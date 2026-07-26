@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JebiSathi — Dashboard</title>
+<title>Ledger — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -13,7 +13,7 @@
 <body>
 
 <div id="authScreen">
-  <h1>JebiSathi</h1>
+  <h1>Ledger</h1>
   <p>Sign in to sync your expenses.</p>
   <div class="auth-card">
     <div class="auth-error" id="authError"></div>
@@ -26,7 +26,7 @@
 
 <div class="wrap hidden" id="appScreen">
   <div class="topnav">
-    <div class="brand">JebiSathi</div>
+    <div class="brand">Ledger</div>
     <div class="links">
       <a href="index.html" class="active">Dashboard</a>
       <a href="expenses.html">Expenses</a>
@@ -68,6 +68,7 @@ let currentUser = null;
 let isSignup = false;
 let periods = [];
 let activePeriod = null;
+let pendingCarryover = null;
 
 function fmt(n){ return 'Rs. ' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 2}); }
 function fmtDate(d){ return new Date(d).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}); }
@@ -160,10 +161,21 @@ async function renderActiveSection(){
       </div>`;
     document.getElementById('stopBtn').addEventListener('click', stopDuration);
   } else {
+    const { data: carry } = await sb.from('periods').select('id,name,carryover_to_next')
+      .eq('carryover_claimed', false).neq('carryover_to_next', 0)
+      .order('ended_at', {ascending:false}).limit(1);
+    pendingCarryover = (carry && carry[0]) || null;
+    const carryNote = pendingCarryover ? `
+      <p style="color:${pendingCarryover.carryover_to_next > 0 ? 'var(--teal)' : 'var(--red)'};font-size:0.82rem;margin:0 0 12px;">
+        ${pendingCarryover.carryover_to_next > 0
+          ? 'Carrying forward ' + fmt(pendingCarryover.carryover_to_next) + ' from "' + pendingCarryover.name + '" — added to whatever budget you set below.'
+          : 'Deducting ' + fmt(Math.abs(pendingCarryover.carryover_to_next)) + ' from "' + pendingCarryover.name + '" overspend — subtracted from whatever budget you set below.'}
+      </p>` : '';
     el.innerHTML = `
       <div class="card">
         <div class="label">Start a new duration</div>
-        <p style="color:var(--muted);font-size:0.85rem;margin:4px 0 14px;">Name it anything — a trip, a week, a stretch until payday.</p>
+        <p style="color:var(--muted);font-size:0.85rem;margin:4px 0 10px;">Name it anything — a trip, a week, a stretch until payday.</p>
+        ${carryNote}
         <div class="start-row">
           <input type="text" id="durationName" placeholder="e.g. Before payday">
           <input type="number" id="durationBudget" placeholder="Budget (optional)" min="0">
@@ -176,16 +188,43 @@ async function renderActiveSection(){
 
 async function startDuration(){
   const name = document.getElementById('durationName').value.trim();
-  const budget = Number(document.getElementById('durationBudget').value) || 0;
+  let budget = Number(document.getElementById('durationBudget').value) || 0;
   if(!name){ alert('Give this duration a name first.'); return; }
-  const { error } = await sb.from('periods').insert({ user_id: currentUser.id, name, budget });
+  if(pendingCarryover) budget += pendingCarryover.carryover_to_next;
+
+  const { data: inserted, error } = await sb.from('periods').insert({ user_id: currentUser.id, name, budget }).select().single();
   if(error){ alert('Could not start: ' + error.message); return; }
+
+  if(pendingCarryover){
+    await sb.from('periods').update({ carryover_claimed: true }).eq('id', pendingCarryover.id);
+    pendingCarryover = null;
+  }
   loadDashboard();
 }
 
 async function stopDuration(){
-  if(!confirm(`Stop "${activePeriod.name}"? You can start a new duration right after.`)) return;
-  const { error } = await sb.from('periods').update({ ended_at: new Date().toISOString() }).eq('id', activePeriod.id);
+  const { data: exp } = await sb.from('expenses').select('amount').eq('period_id', activePeriod.id);
+  const total = (exp || []).reduce((s,e) => s + Number(e.amount), 0);
+  let carryover = 0;
+
+  if(activePeriod.budget > 0){
+    const remaining = activePeriod.budget - total;
+    if(remaining > 0){
+      if(confirm(`You have ${fmt(remaining)} left over from "${activePeriod.name}". Carry it into your next duration's budget?`)){
+        carryover = remaining;
+      }
+    } else if(remaining < 0){
+      if(confirm(`You went ${fmt(Math.abs(remaining))} over on "${activePeriod.name}". Deduct this from your next duration's budget?`)){
+        carryover = remaining;
+      }
+    }
+  }
+
+  if(!confirm(`Stop "${activePeriod.name}"?`)) return;
+
+  const { error } = await sb.from('periods')
+    .update({ ended_at: new Date().toISOString(), carryover_to_next: carryover })
+    .eq('id', activePeriod.id);
   if(error){ alert('Could not stop: ' + error.message); return; }
   loadDashboard();
 }
@@ -211,10 +250,23 @@ async function renderComparison(){
           <div class="name">${p.name}</div>
           <div class="meta">${fmtDate(p.started_at)} → ${fmtDate(p.ended_at)} · ${days} day${days>1?'s':''}</div>
         </div>
-        <div class="amt ${overUnder}">${fmt(total)}${p.budget > 0 ? ' / ' + fmt(p.budget) : ''}</div>
+        <div>
+          <span class="amt ${overUnder}">${fmt(total)}${p.budget > 0 ? ' / ' + fmt(p.budget) : ''}</span>
+          <button class="del-duration" data-id="${p.id}" title="Delete this duration">✕</button>
+        </div>
       </div>`;
   }).join('');
 }
+
+document.getElementById('comparisonList').addEventListener('click', async (ev) => {
+  if(ev.target.classList.contains('del-duration')){
+    const id = ev.target.dataset.id;
+    if(!confirm('Delete this duration and all its expenses? This cannot be undone.')) return;
+    const { error } = await sb.from('periods').delete().eq('id', id);
+    if(error){ alert('Could not delete: ' + error.message); return; }
+    loadDashboard();
+  }
+});
 </script>
 </body>
 </html>
