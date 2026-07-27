@@ -52,6 +52,13 @@
 
   <div id="activeSection"></div>
 
+  <div class="section-title">Spending by duration</div>
+  <div class="card">
+    <div id="durationChart" class="chart-row"></div>
+  </div>
+
+  <div id="periodDetail" class="card hidden"></div>
+
   <div class="section-title">Compare your durations</div>
   <div class="card" id="comparisonCard">
     <div id="comparisonList"></div>
@@ -69,6 +76,8 @@ let isSignup = false;
 let periods = [];
 let activePeriod = null;
 let pendingCarryover = null;
+let periodTotals = {};
+let selectedPeriodId = null;
 
 function fmt(n){ return 'Rs. ' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 2}); }
 function fmtDate(d){ return new Date(d).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}); }
@@ -136,15 +145,26 @@ async function loadDashboard(){
   const { data } = await sb.from('periods').select('*').order('started_at', {ascending:false});
   periods = data || [];
   activePeriod = periods.find(p => !p.ended_at) || null;
+
+  const { data: allExp } = await sb.from('expenses').select('period_id, amount');
+  periodTotals = {};
+  (allExp || []).forEach(e => { periodTotals[e.period_id] = (periodTotals[e.period_id] || 0) + Number(e.amount); });
+
   await renderActiveSection();
+  renderChart();
   renderComparison();
+  if(selectedPeriodId && periods.some(p => p.id === selectedPeriodId)){
+    selectPeriod(selectedPeriodId);
+  } else {
+    selectedPeriodId = null;
+    document.getElementById('periodDetail').classList.add('hidden');
+  }
 }
 
 async function renderActiveSection(){
   const el = document.getElementById('activeSection');
   if(activePeriod){
-    const { data: exp } = await sb.from('expenses').select('amount').eq('period_id', activePeriod.id);
-    const total = (exp || []).reduce((s,e) => s + Number(e.amount), 0);
+    const total = periodTotals[activePeriod.id] || 0;
     const days = daysBetween(activePeriod.started_at, new Date());
     const remaining = activePeriod.budget > 0 ? activePeriod.budget - total : null;
     el.innerHTML = `
@@ -154,12 +174,27 @@ async function renderActiveSection(){
         <p style="color:var(--muted);font-size:0.85rem;margin:8px 0 0;">
           Started ${fmtDate(activePeriod.started_at)} · Day ${days} · Spent ${fmt(total)}${activePeriod.budget > 0 ? ' of ' + fmt(activePeriod.budget) : ''}
         </p>
-        <div style="margin-top:14px;display:flex;gap:10px;">
+        <div id="budgetEditArea" style="margin-top:10px;"></div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
           <a href="expenses.html"><button class="primary" type="button">Add expenses</button></a>
+          <button class="ghost" id="editBudgetBtn" type="button">Edit budget</button>
           <button class="ghost" id="stopBtn" type="button">Stop this duration</button>
         </div>
       </div>`;
     document.getElementById('stopBtn').addEventListener('click', stopDuration);
+    document.getElementById('editBudgetBtn').addEventListener('click', () => {
+      document.getElementById('budgetEditArea').innerHTML = `
+        <div class="start-row">
+          <input type="number" id="editBudgetInput" min="0" value="${activePeriod.budget || ''}" placeholder="Budget">
+          <button class="primary" id="saveBudgetEditBtn" type="button">Save</button>
+        </div>`;
+      document.getElementById('saveBudgetEditBtn').addEventListener('click', async () => {
+        const val = Number(document.getElementById('editBudgetInput').value) || 0;
+        const { error } = await sb.from('periods').update({ budget: val }).eq('id', activePeriod.id);
+        if(error){ alert('Could not update: ' + error.message); return; }
+        loadDashboard();
+      });
+    });
   } else {
     const { data: carry } = await sb.from('periods').select('id,name,carryover_to_next')
       .eq('carryover_claimed', false).neq('carryover_to_next', 0)
@@ -203,8 +238,7 @@ async function startDuration(){
 }
 
 async function stopDuration(){
-  const { data: exp } = await sb.from('expenses').select('amount').eq('period_id', activePeriod.id);
-  const total = (exp || []).reduce((s,e) => s + Number(e.amount), 0);
+  const total = periodTotals[activePeriod.id] || 0;
   let carryover = 0;
 
   if(activePeriod.budget > 0){
@@ -229,6 +263,94 @@ async function stopDuration(){
   loadDashboard();
 }
 
+function renderChart(){
+  const el = document.getElementById('durationChart');
+  if(periods.length === 0){
+    el.innerHTML = '<div class="empty">Start a duration to see it charted here.</div>';
+    return;
+  }
+  const ordered = [...periods].sort((a,b) => new Date(a.started_at) - new Date(b.started_at));
+  const maxTotal = Math.max(1, ...ordered.map(p => periodTotals[p.id] || 0));
+  el.innerHTML = ordered.map(p => {
+    const total = periodTotals[p.id] || 0;
+    const h = Math.max(6, Math.round(total / maxTotal * 110));
+    const isOver = p.budget > 0 && total > p.budget;
+    const isActive = !p.ended_at;
+    const label = p.name.length > 9 ? p.name.slice(0,8) + '…' : p.name;
+    return `
+      <div class="chart-bar-wrap ${selectedPeriodId === p.id ? 'selected' : ''}" data-id="${p.id}" title="${p.name}">
+        <div class="chart-bar-amt">${fmt(total)}</div>
+        <div class="chart-bar-area"><div class="chart-bar ${isOver ? 'over' : ''}" style="height:${h}px"></div></div>
+        <div class="chart-bar-label">${label}${isActive ? ' •' : ''}</div>
+      </div>`;
+  }).join('');
+}
+
+document.getElementById('durationChart').addEventListener('click', (ev) => {
+  const wrap = ev.target.closest('.chart-bar-wrap');
+  if(wrap) selectPeriod(wrap.dataset.id);
+});
+
+async function selectPeriod(id){
+  selectedPeriodId = id;
+  const p = periods.find(pd => pd.id === id);
+  if(!p) return;
+
+  document.querySelectorAll('.chart-bar-wrap').forEach(w => w.classList.toggle('selected', w.dataset.id === id));
+  document.querySelectorAll('.duration-row').forEach(r => r.classList.toggle('selected', r.dataset.id === id));
+
+  const { data: exp } = await sb.from('expenses').select('category, amount').eq('period_id', id);
+  const { data: catBud } = await sb.from('category_budgets').select('category, expected').eq('period_id', id);
+
+  const byCat = {};
+  (exp || []).forEach(e => { byCat[e.category] = (byCat[e.category] || 0) + Number(e.amount); });
+  const expectedMap = {};
+  (catBud || []).forEach(r => { expectedMap[r.category] = Number(r.expected); });
+
+  const total = periodTotals[id] || 0;
+  const days = p.ended_at ? daysBetween(p.started_at, p.ended_at) : daysBetween(p.started_at, new Date());
+  const cats = Object.keys({...byCat, ...expectedMap}).sort((a,b) => (byCat[b]||0) - (byCat[a]||0));
+  const maxCat = Math.max(1, ...cats.map(c => Math.max(byCat[c]||0, expectedMap[c]||0)));
+
+  const detailEl = document.getElementById('periodDetail');
+  detailEl.classList.remove('hidden');
+  detailEl.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div>
+        <div class="label">${p.ended_at ? 'Duration' : 'Currently running'}</div>
+        <div style="font-weight:700;font-size:1.1rem;">${p.name}</div>
+        <p style="color:var(--muted);font-size:0.8rem;margin:4px 0 0;">
+          ${fmtDate(p.started_at)}${p.ended_at ? ' → ' + fmtDate(p.ended_at) : ''} · ${days} day${days>1?'s':''} · ${fmt(total)}${p.budget > 0 ? ' of ' + fmt(p.budget) : ''}
+        </p>
+      </div>
+      <button class="ghost" id="closeDetail" type="button">Close</button>
+    </div>
+    <div style="margin-top:16px;">
+      ${cats.length === 0 ? '<div class="empty">No expenses recorded for this duration.</div>' : cats.map(cat => {
+        const actual = byCat[cat] || 0;
+        const expected = expectedMap[cat] || 0;
+        const fillPct = (actual / maxCat * 100).toFixed(1);
+        const markerPct = expected > 0 ? (expected / maxCat * 100).toFixed(1) : null;
+        const fillClass = expected > 0 ? (actual > expected ? 'over' : 'under') : '';
+        const expectedLabel = expected > 0 ? `<span class="exp"> / ${fmt(expected)} expected</span>` : '';
+        return `
+          <div class="bar-row">
+            <div class="bar-top"><span>${cat}</span><span class="amt">${fmt(actual)}${expectedLabel}</span></div>
+            <div class="bar-track">
+              <div class="bar-fill ${fillClass}" style="width:${fillPct}%"></div>
+              ${markerPct !== null ? `<div class="bar-marker" style="left:${markerPct}%"></div>` : ''}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+  document.getElementById('closeDetail').addEventListener('click', () => {
+    selectedPeriodId = null;
+    detailEl.classList.add('hidden');
+    document.querySelectorAll('.chart-bar-wrap, .duration-row').forEach(w => w.classList.remove('selected'));
+  });
+  detailEl.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
 async function renderComparison(){
   const listEl = document.getElementById('comparisonList');
   const ended = periods.filter(p => p.ended_at);
@@ -236,16 +358,12 @@ async function renderComparison(){
     listEl.innerHTML = '<div class="empty">Finish a duration to see it compared here.</div>';
     return;
   }
-  const rows = await Promise.all(ended.map(async p => {
-    const { data: exp } = await sb.from('expenses').select('amount').eq('period_id', p.id);
-    const total = (exp || []).reduce((s,e) => s + Number(e.amount), 0);
+  listEl.innerHTML = ended.map(p => {
+    const total = periodTotals[p.id] || 0;
     const days = daysBetween(p.started_at, p.ended_at);
-    return { p, total, days };
-  }));
-  listEl.innerHTML = rows.map(({p, total, days}) => {
     const overUnder = p.budget > 0 ? (total > p.budget ? 'over' : 'under') : '';
     return `
-      <div class="duration-row">
+      <div class="duration-row" data-id="${p.id}">
         <div>
           <div class="name">${p.name}</div>
           <div class="meta">${fmtDate(p.started_at)} → ${fmtDate(p.ended_at)} · ${days} day${days>1?'s':''}</div>
@@ -264,8 +382,12 @@ document.getElementById('comparisonList').addEventListener('click', async (ev) =
     if(!confirm('Delete this duration and all its expenses? This cannot be undone.')) return;
     const { error } = await sb.from('periods').delete().eq('id', id);
     if(error){ alert('Could not delete: ' + error.message); return; }
+    if(selectedPeriodId === id) selectedPeriodId = null;
     loadDashboard();
+    return;
   }
+  const row = ev.target.closest('.duration-row');
+  if(row) selectPeriod(row.dataset.id);
 });
 </script>
 </body>
