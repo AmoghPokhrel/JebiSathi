@@ -55,6 +55,12 @@
   <div class="section-title">Spending by duration</div>
   <div class="card">
     <div id="durationChart" class="chart-row"></div>
+    <div class="chart-legend">
+      <span><i class="dot under"></i> Under budget</span>
+      <span><i class="dot over"></i> Over budget</span>
+      <span><i class="dot neutral"></i> No budget set</span>
+      <span><i class="line"></i> Budget line</span>
+    </div>
   </div>
 
   <div id="periodDetail" class="card hidden"></div>
@@ -118,16 +124,23 @@ sb.auth.onAuthStateChange((event, session) => {
     document.getElementById('appScreen').classList.remove('hidden');
     document.getElementById('userEmail').textContent = currentUser.email;
     const name = currentUser.user_metadata && currentUser.user_metadata.display_name;
-    if(name){
-      document.getElementById('greeting').textContent = 'Hey, ' + name;
-    } else {
-      document.getElementById('nameCard').style.display = 'block';
-    }
+    document.getElementById('greeting').textContent = name ? ('Hey, ' + name) : 'Welcome';
+    document.getElementById('nameCard').style.display = name ? 'none' : 'block';
     loadDashboard();
   } else {
     currentUser = null;
     document.getElementById('appScreen').classList.add('hidden');
     document.getElementById('authScreen').classList.remove('hidden');
+    // reset every bit of session-specific state so nothing from a
+    // previous account can flash on screen for the next login
+    document.getElementById('greeting').textContent = 'Welcome';
+    document.getElementById('nameCard').style.display = 'none';
+    document.getElementById('nameInput').value = '';
+    periods = []; activePeriod = null; periodTotals = {}; selectedPeriodId = null; pendingCarryover = null;
+    document.getElementById('activeSection').innerHTML = '';
+    document.getElementById('durationChart').innerHTML = '';
+    document.getElementById('comparisonList').innerHTML = '';
+    document.getElementById('periodDetail').classList.add('hidden');
   }
 });
 
@@ -270,17 +283,22 @@ function renderChart(){
     return;
   }
   const ordered = [...periods].sort((a,b) => new Date(a.started_at) - new Date(b.started_at));
-  const maxTotal = Math.max(1, ...ordered.map(p => periodTotals[p.id] || 0));
+  const maxTotal = Math.max(1, ...ordered.map(p => Math.max(periodTotals[p.id] || 0, p.budget || 0)));
   el.innerHTML = ordered.map(p => {
     const total = periodTotals[p.id] || 0;
     const h = Math.max(6, Math.round(total / maxTotal * 110));
-    const isOver = p.budget > 0 && total > p.budget;
+    let colorClass = 'neutral';
+    if(p.budget > 0) colorClass = total > p.budget ? 'over' : 'under';
     const isActive = !p.ended_at;
     const label = p.name.length > 9 ? p.name.slice(0,8) + '…' : p.name;
+    const markerPx = p.budget > 0 ? Math.round(p.budget / maxTotal * 110) : null;
     return `
-      <div class="chart-bar-wrap ${selectedPeriodId === p.id ? 'selected' : ''}" data-id="${p.id}" title="${p.name}">
+      <div class="chart-bar-wrap ${selectedPeriodId === p.id ? 'selected' : ''}" data-id="${p.id}" title="${p.name}${p.budget > 0 ? ' — budget ' + fmt(p.budget) : ''}">
         <div class="chart-bar-amt">${fmt(total)}</div>
-        <div class="chart-bar-area"><div class="chart-bar ${isOver ? 'over' : ''}" style="height:${h}px"></div></div>
+        <div class="chart-bar-area">
+          <div class="chart-bar ${colorClass}" style="height:${h}px"></div>
+          ${markerPx !== null ? `<div class="chart-bar-marker" style="bottom:${markerPx}px"></div>` : ''}
+        </div>
         <div class="chart-bar-label">${label}${isActive ? ' •' : ''}</div>
       </div>`;
   }).join('');
