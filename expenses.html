@@ -18,7 +18,10 @@
   <div class="auth-card">
     <div class="auth-error" id="authError"></div>
     <input type="email" id="authEmail" placeholder="Email">
-    <input type="password" id="authPassword" placeholder="Password">
+    <div class="password-wrap">
+      <input type="password" id="authPassword" placeholder="Password">
+      <button type="button" class="password-toggle" id="togglePassword" title="Show password">👁</button>
+    </div>
     <button class="primary" id="authSubmit">Sign in</button>
   </div>
 </div>
@@ -104,6 +107,23 @@
 const DEFAULT_CATEGORIES = ['Food','Rent','Transport','Groceries','Utilities','Health','Entertainment','Other'];
 const COLOR_PALETTE = ['#e8a33d','#4fd1c5','#e8664f','#7c9eff','#c792ea','#f6c177','#6fcf97','#ff8fab','#56cfe1','#f4a261'];
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ---------- AUTO SIGN-OUT AFTER 6 HOURS OF INACTIVITY ----------
+const INACTIVITY_LIMIT_MS = 6 * 60 * 60 * 1000;
+const LAST_ACTIVE_KEY = 'ledger:lastActive';
+function markActive(){ localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString()); }
+function checkInactivity(){
+  const last = Number(localStorage.getItem(LAST_ACTIVE_KEY));
+  if(last && (Date.now() - last) > INACTIVITY_LIMIT_MS){
+    sb.auth.signOut();
+  } else {
+    markActive();
+  }
+}
+['click','keydown','mousemove','scroll','touchstart'].forEach(evt => document.addEventListener(evt, markActive, {passive:true}));
+markActive();
+checkInactivity();
+setInterval(checkInactivity, 5 * 60 * 1000);
 let currentUser = null;
 let activePeriod = null;
 let expenses = [];
@@ -121,6 +141,14 @@ document.getElementById('authSubmit').addEventListener('click', async () => {
   errEl.textContent = '';
   const { error } = await sb.auth.signInWithPassword({ email, password });
   if(error){ errEl.textContent = error.message; }
+});
+
+document.getElementById('togglePassword').addEventListener('click', () => {
+  const inp = document.getElementById('authPassword');
+  const btn = document.getElementById('togglePassword');
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.textContent = show ? '🙈' : '👁';
 });
 
 document.getElementById('signOutBtn').addEventListener('click', async () => { await sb.auth.signOut(); });
