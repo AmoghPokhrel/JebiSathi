@@ -80,6 +80,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 let isSignup = false;
 let periods = [];
+let categories = [];
 let activePeriod = null;
 let pendingCarryover = null;
 let periodTotals = {};
@@ -88,6 +89,7 @@ let selectedPeriodId = null;
 function fmt(n){ return 'Rs. ' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 2}); }
 function fmtDate(d){ return new Date(d).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}); }
 function daysBetween(a,b){ return Math.max(1, Math.round((new Date(b) - new Date(a)) / 86400000)); }
+function catColor(name){ const c = categories.find(cc => cc.name === name); return c ? c.color : '#e8a33d'; }
 
 // ---------- AUTH ----------
 document.getElementById('toSignup').addEventListener('click', () => {
@@ -136,7 +138,7 @@ sb.auth.onAuthStateChange((event, session) => {
     document.getElementById('greeting').textContent = 'Welcome';
     document.getElementById('nameCard').style.display = 'none';
     document.getElementById('nameInput').value = '';
-    periods = []; activePeriod = null; periodTotals = {}; selectedPeriodId = null; pendingCarryover = null;
+    periods = []; activePeriod = null; periodTotals = {}; selectedPeriodId = null; pendingCarryover = null; categories = [];
     document.getElementById('activeSection').innerHTML = '';
     document.getElementById('durationChart').innerHTML = '';
     document.getElementById('comparisonList').innerHTML = '';
@@ -158,6 +160,9 @@ async function loadDashboard(){
   const { data } = await sb.from('periods').select('*').order('started_at', {ascending:false});
   periods = data || [];
   activePeriod = periods.find(p => !p.ended_at) || null;
+
+  const { data: cats } = await sb.from('categories').select('*');
+  categories = cats || [];
 
   const { data: allExp } = await sb.from('expenses').select('period_id, amount');
   periodTotals = {};
@@ -349,13 +354,13 @@ async function selectPeriod(id){
         const expected = expectedMap[cat] || 0;
         const fillPct = (actual / maxCat * 100).toFixed(1);
         const markerPct = expected > 0 ? (expected / maxCat * 100).toFixed(1) : null;
-        const fillClass = expected > 0 ? (actual > expected ? 'over' : 'under') : '';
+        const fillColor = expected > 0 ? (actual > expected ? 'var(--red)' : 'var(--teal)') : catColor(cat);
         const expectedLabel = expected > 0 ? `<span class="exp"> / ${fmt(expected)} expected</span>` : '';
         return `
           <div class="bar-row">
             <div class="bar-top"><span>${cat}</span><span class="amt">${fmt(actual)}${expectedLabel}</span></div>
             <div class="bar-track">
-              <div class="bar-fill ${fillClass}" style="width:${fillPct}%"></div>
+              <div class="bar-fill" style="width:${fillPct}%;background:${fillColor}"></div>
               ${markerPct !== null ? `<div class="bar-marker" style="left:${markerPct}%"></div>` : ''}
             </div>
           </div>`;
