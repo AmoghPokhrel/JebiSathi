@@ -138,7 +138,7 @@ form.add button{grid-column:1/3;}
 
 .password-wrap{position:relative;margin-bottom:10px;}
 .password-wrap input{width:100%;padding-right:40px;margin-bottom:0;}
-.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;padding:6px;line-height:0;border-radius:6px;display:flex;align-items:center;justify-content:center;}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;padding:6px;line-height:0;border-radius:6px;display:flex;align-items:center;justify-content:center;width:auto !important;margin-bottom:0 !important;}
 .password-toggle svg{width:18px;height:18px;display:block;}
 .password-toggle:hover{color:var(--text);background:var(--card-hi);}
 
