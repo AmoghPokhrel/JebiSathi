@@ -83,7 +83,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ---------- AUTO SIGN-OUT AFTER 6 HOURS OF INACTIVITY ----------
 const INACTIVITY_LIMIT_MS = 6 * 60 * 60 * 1000;
-const LAST_ACTIVE_KEY = 'JebiSathi:lastActive';
+const LAST_ACTIVE_KEY = 'ledger:lastActive';
 function markActive(){ localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString()); }
 function checkInactivity(){
   const last = Number(localStorage.getItem(LAST_ACTIVE_KEY));
