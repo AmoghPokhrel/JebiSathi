@@ -136,6 +136,11 @@ form.add button{grid-column:1/3;}
 .auth-error{color:var(--red);font-size:0.82rem;margin-bottom:10px;min-height:1em;}
 .hidden{display:none !important;}
 
+.password-wrap{position:relative;margin-bottom:10px;}
+.password-wrap input{width:100%;padding-right:38px;margin-bottom:0;}
+.password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.95rem;padding:2px;line-height:1;}
+.password-toggle:hover{color:var(--text);}
+
 /* Name capture */
 .name-card{display:flex;gap:10px;}
 .name-card input{flex:1;}
